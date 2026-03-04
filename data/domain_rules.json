@@ -1,0 +1,368 @@
+{
+  "version": 1,
+  "description": "Synthetic diagnostic reasoning domain with deterministic scoring.",
+  "label_space": [
+    "Disease_01",
+    "Disease_02",
+    "Disease_03",
+    "Disease_04",
+    "Disease_05",
+    "Disease_06",
+    "Disease_07",
+    "Disease_08",
+    "Disease_09",
+    "Disease_10",
+    "Disease_11",
+    "Disease_12",
+    "Disease_13",
+    "Disease_14",
+    "Disease_15",
+    "UNKNOWN"
+  ],
+  "tie_break_rule": "Choose the candidate with highest score; if tied, choose lexicographically smallest disease id.",
+  "score_rule": "score = 5 * required_matches + optional_matches - 0.2 * extra_symptoms",
+  "unknown_rule": "Return UNKNOWN if no disease satisfies all required symptoms and zero excluded symptoms.",
+  "symptoms": [
+    "fever",
+    "cough",
+    "fatigue",
+    "sore_throat",
+    "headache",
+    "myalgia",
+    "chills",
+    "runny_nose",
+    "shortness_of_breath",
+    "chest_pain",
+    "rapid_breathing",
+    "high_wbc_marker",
+    "sneezing",
+    "itchy_eyes",
+    "nausea",
+    "light_sensitivity",
+    "vomiting",
+    "aura_visual",
+    "neck_pain",
+    "dizziness",
+    "diarrhea",
+    "abdominal_pain",
+    "dehydration",
+    "cramps",
+    "urinary_burning",
+    "frequent_urination",
+    "pelvic_pain",
+    "cloudy_urine",
+    "back_pain",
+    "watery_eyes",
+    "nasal_congestion",
+    "throat_itch",
+    "rebound_tenderness",
+    "loss_of_appetite",
+    "elevated_crp",
+    "jaundice",
+    "dark_urine",
+    "excessive_thirst",
+    "blurred_vision",
+    "weight_loss",
+    "slow_healing",
+    "tingling_feet",
+    "palpitations",
+    "heat_intolerance",
+    "tremor",
+    "anxiety",
+    "sweating",
+    "frequent_bowel_movements",
+    "constipation",
+    "cold_intolerance",
+    "dry_skin",
+    "weight_gain",
+    "hair_loss",
+    "depression",
+    "wheezing",
+    "chest_tightness",
+    "joint_pain",
+    "morning_stiffness",
+    "joint_swelling",
+    "low_grade_fever",
+    "reduced_grip",
+    "pallor",
+    "brittle_nails",
+    "pica",
+    "flank_pain",
+    "hematuria",
+    "urinary_urgency",
+    "restlessness"
+  ],
+  "diseases": {
+    "Disease_01": {
+      "name": "Viral_Flu",
+      "required": [
+        "fever",
+        "cough",
+        "fatigue"
+      ],
+      "optional": [
+        "sore_throat",
+        "headache",
+        "myalgia",
+        "chills",
+        "runny_nose"
+      ],
+      "exclude": [
+        "rash",
+        "joint_swelling",
+        "urinary_burning"
+      ]
+    },
+    "Disease_02": {
+      "name": "Bacterial_Pneumonia",
+      "required": [
+        "fever",
+        "cough",
+        "shortness_of_breath"
+      ],
+      "optional": [
+        "chest_pain",
+        "rapid_breathing",
+        "fatigue",
+        "chills",
+        "high_wbc_marker"
+      ],
+      "exclude": [
+        "sneezing",
+        "itchy_eyes"
+      ]
+    },
+    "Disease_03": {
+      "name": "Migraine",
+      "required": [
+        "headache",
+        "nausea",
+        "light_sensitivity"
+      ],
+      "optional": [
+        "vomiting",
+        "aura_visual",
+        "neck_pain",
+        "dizziness"
+      ],
+      "exclude": [
+        "cough",
+        "fever"
+      ]
+    },
+    "Disease_04": {
+      "name": "Food_Poisoning",
+      "required": [
+        "nausea",
+        "vomiting",
+        "diarrhea"
+      ],
+      "optional": [
+        "abdominal_pain",
+        "fever",
+        "dehydration",
+        "cramps"
+      ],
+      "exclude": [
+        "cough",
+        "sore_throat"
+      ]
+    },
+    "Disease_05": {
+      "name": "UTI",
+      "required": [
+        "urinary_burning",
+        "frequent_urination"
+      ],
+      "optional": [
+        "pelvic_pain",
+        "fever",
+        "cloudy_urine",
+        "back_pain"
+      ],
+      "exclude": [
+        "cough",
+        "sneezing"
+      ]
+    },
+    "Disease_06": {
+      "name": "Allergic_Rhinitis",
+      "required": [
+        "sneezing",
+        "runny_nose",
+        "itchy_eyes"
+      ],
+      "optional": [
+        "watery_eyes",
+        "nasal_congestion",
+        "cough",
+        "throat_itch"
+      ],
+      "exclude": [
+        "fever",
+        "chills"
+      ]
+    },
+    "Disease_07": {
+      "name": "Appendicitis",
+      "required": [
+        "abdominal_pain",
+        "rebound_tenderness",
+        "loss_of_appetite"
+      ],
+      "optional": [
+        "fever",
+        "nausea",
+        "vomiting",
+        "elevated_crp"
+      ],
+      "exclude": [
+        "cough",
+        "runny_nose",
+        "sneezing"
+      ]
+    },
+    "Disease_08": {
+      "name": "Viral_Hepatitis",
+      "required": [
+        "jaundice",
+        "fatigue",
+        "nausea"
+      ],
+      "optional": [
+        "abdominal_pain",
+        "dark_urine",
+        "loss_of_appetite",
+        "fever"
+      ],
+      "exclude": [
+        "sneezing",
+        "itchy_eyes"
+      ]
+    },
+    "Disease_09": {
+      "name": "Diabetes_Uncontrolled",
+      "required": [
+        "excessive_thirst",
+        "frequent_urination",
+        "fatigue"
+      ],
+      "optional": [
+        "blurred_vision",
+        "weight_loss",
+        "slow_healing",
+        "tingling_feet"
+      ],
+      "exclude": [
+        "cough",
+        "sore_throat"
+      ]
+    },
+    "Disease_10": {
+      "name": "Hyperthyroidism",
+      "required": [
+        "weight_loss",
+        "palpitations",
+        "heat_intolerance"
+      ],
+      "optional": [
+        "tremor",
+        "anxiety",
+        "sweating",
+        "frequent_bowel_movements"
+      ],
+      "exclude": [
+        "constipation",
+        "cold_intolerance"
+      ]
+    },
+    "Disease_11": {
+      "name": "Hypothyroidism",
+      "required": [
+        "fatigue",
+        "cold_intolerance",
+        "constipation"
+      ],
+      "optional": [
+        "dry_skin",
+        "weight_gain",
+        "hair_loss",
+        "depression"
+      ],
+      "exclude": [
+        "heat_intolerance",
+        "palpitations"
+      ]
+    },
+    "Disease_12": {
+      "name": "Asthma_Exacerbation",
+      "required": [
+        "wheezing",
+        "shortness_of_breath",
+        "chest_tightness"
+      ],
+      "optional": [
+        "cough",
+        "rapid_breathing",
+        "anxiety"
+      ],
+      "exclude": [
+        "jaundice",
+        "urinary_burning"
+      ]
+    },
+    "Disease_13": {
+      "name": "Rheumatoid_Arthritis",
+      "required": [
+        "joint_pain",
+        "morning_stiffness",
+        "joint_swelling"
+      ],
+      "optional": [
+        "fatigue",
+        "low_grade_fever",
+        "reduced_grip"
+      ],
+      "exclude": [
+        "cough",
+        "runny_nose"
+      ]
+    },
+    "Disease_14": {
+      "name": "Iron_Def_Anemia",
+      "required": [
+        "fatigue",
+        "pallor",
+        "shortness_of_breath"
+      ],
+      "optional": [
+        "dizziness",
+        "headache",
+        "brittle_nails",
+        "pica"
+      ],
+      "exclude": [
+        "jaundice",
+        "joint_swelling"
+      ]
+    },
+    "Disease_15": {
+      "name": "Kidney_Stone",
+      "required": [
+        "flank_pain",
+        "hematuria",
+        "nausea"
+      ],
+      "optional": [
+        "vomiting",
+        "urinary_urgency",
+        "sweating",
+        "restlessness"
+      ],
+      "exclude": [
+        "cough",
+        "runny_nose"
+      ]
+    }
+  }
+}
