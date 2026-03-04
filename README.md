@@ -35,7 +35,7 @@ python src/finetune_lora.py \
   --val_file data/val.jsonl \
   --output_dir outputs/adapters \
   --run_id ds_r1_diag_lora \
-  --epochs 2 \
+  --epochs 3 \
   --batch_size 2 \
   --grad_accum 8 \
   --max_length 256 \

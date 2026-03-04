@@ -70,7 +70,7 @@ def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
         trust_remote_code=True,
         quantization_config=quant_config,
         torch_dtype=None if qlora else dtype,
-        device_map="auto",
+        device_map={"": 0},
     )
 
     if qlora:
@@ -139,7 +139,7 @@ def main() -> None:
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         logging_strategy="steps",
         logging_steps=20,
@@ -156,7 +156,7 @@ def main() -> None:
         train_dataset=tokenized["train"],
         eval_dataset=tokenized["validation"],
         data_collator=data_collator,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
 
     trainer.train()
