@@ -1,13 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
+from pathlib import Path
 
 import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-LABEL_PATTERN = re.compile(r"\b(Disease_\d{2}|UNKNOWN)\b")
+LABEL_PATTERN = re.compile(r"\b(?:Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
+
+
+def load_label_name_maps(rules_path: str | Path = "data/domain_rules.json") -> tuple[dict[str, str], dict[str, str]]:
+    path = Path(rules_path)
+    if not path.exists():
+        return {}, {}
+
+    with open(path, "r", encoding="utf-8") as f:
+        rules = json.load(f)
+
+    mapping: dict[str, str] = {}
+    label_to_name: dict[str, str] = {}
+    for disease_id, spec in rules.get("diseases", {}).items():
+        name = spec.get("name")
+        if isinstance(name, str):
+            mapping[name.lower()] = disease_id
+            label_to_name[disease_id] = name
+    return mapping, label_to_name
 
 
 def build_prompt(symptoms: list[str]) -> str:
@@ -21,9 +41,22 @@ def build_prompt(symptoms: list[str]) -> str:
     )
 
 
-def extract_label(text: str) -> str:
+def extract_label(text: str, name_to_label: dict[str, str] | None = None) -> str:
     m = LABEL_PATTERN.search(text)
-    return m.group(1) if m else "UNKNOWN"
+    if m:
+        raw = m.group(0).upper()
+        if raw == "UNKNOWN":
+            return "UNKNOWN"
+        disease_num = int(m.group(1))
+        return f"Disease_{disease_num:02d}"
+
+    if name_to_label:
+        lowered = text.lower()
+        for name, disease_id in name_to_label.items():
+            if name in lowered:
+                return disease_id
+
+    return "UNKNOWN"
 
 
 def main() -> None:
@@ -33,10 +66,13 @@ def main() -> None:
     parser.add_argument("--symptoms", type=str, required=True, help="Comma-separated symptoms")
     parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda")
     parser.add_argument("--max_new_tokens", type=int, default=8)
+    parser.add_argument("--rules", type=str, default="data/domain_rules.json")
+    parser.add_argument("--output", type=str, choices=["label", "name", "both"], default="label")
     args = parser.parse_args()
 
     symptoms = [x.strip() for x in args.symptoms.split(",") if x.strip()]
     prompt = build_prompt(symptoms)
+    name_to_label, label_to_name = load_label_name_maps(args.rules)
 
     tokenizer = AutoTokenizer.from_pretrained(args.adapter_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -67,7 +103,14 @@ def main() -> None:
 
     text = tokenizer.decode(out[0], skip_special_tokens=True)
     completion = text[len(prompt) :]
-    print(extract_label(completion))
+    label = extract_label(completion, name_to_label=name_to_label)
+    if args.output == "label":
+        print(label)
+    elif args.output == "name":
+        print(label_to_name.get(label, "UNKNOWN" if label == "UNKNOWN" else label))
+    else:
+        disease_name = label_to_name.get(label, "UNKNOWN" if label == "UNKNOWN" else label)
+        print(f"{label} ({disease_name})")
 
 
 if __name__ == "__main__":
