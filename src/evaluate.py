@@ -10,7 +10,8 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-LABEL_PATTERN = re.compile(r"\b(Disease_\d{2}|UNKNOWN)\b")
+FINAL_ANSWER_PATTERN = re.compile(r"Final answer:\s*(Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
+LABEL_PATTERN = re.compile(r"\b(?:Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 
 
 def load_jsonl(path: str) -> List[Dict]:
@@ -22,8 +23,32 @@ def load_jsonl(path: str) -> List[Dict]:
 
 
 def extract_label(text: str) -> str:
+    m = FINAL_ANSWER_PATTERN.search(text)
+    if m:
+        raw = m.group(1).upper()
+        if raw == "UNKNOWN":
+            return "UNKNOWN"
+        disease_num = int(m.group(2))
+        return f"Disease_{disease_num:02d}"
+
     m = LABEL_PATTERN.search(text)
-    return m.group(1) if m else "UNKNOWN"
+    if m:
+        raw = m.group(0).upper()
+        if raw == "UNKNOWN":
+            return "UNKNOWN"
+        disease_num = int(m.group(1))
+        return f"Disease_{disease_num:02d}"
+    return "UNKNOWN"
+
+
+def build_prompt(row: Dict) -> str:
+    if "instruction" in row:
+        instruction = str(row["instruction"]).strip()
+        extra_input = str(row.get("input", "")).strip()
+        if extra_input:
+            return f"Instruction:\n{instruction}\n\nInput:\n{extra_input}\n\nResponse:\n"
+        return f"Instruction:\n{instruction}\n\nResponse:\n"
+    return row["input"]
 
 
 def load_model(base_model: str, adapter_path: str, device: str):
@@ -43,7 +68,7 @@ def load_model(base_model: str, adapter_path: str, device: str):
     return model, tokenizer
 
 
-def predict_label(model, tokenizer, prompt: str, max_new_tokens: int, device: str) -> str:
+def predict_label(model, tokenizer, prompt: str, max_new_tokens: int, device: str) -> tuple[str, str]:
     encoded = tokenizer(prompt, return_tensors="pt")
     if device != "auto":
         encoded = {k: v.to(device) for k, v in encoded.items()}
@@ -60,7 +85,7 @@ def predict_label(model, tokenizer, prompt: str, max_new_tokens: int, device: st
 
     text = tokenizer.decode(out[0], skip_special_tokens=True)
     completion = text[len(prompt) :]
-    return extract_label(completion)
+    return extract_label(completion), completion
 
 
 def main() -> None:
@@ -69,10 +94,11 @@ def main() -> None:
     parser.add_argument("--adapter_path", type=str, required=True)
     parser.add_argument("--test_file", type=str, default="data/test.jsonl")
     parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda")
-    parser.add_argument("--max_new_tokens", type=int, default=8)
+    parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--max_examples", type=int, default=0, help="0 means all")
     parser.add_argument("--save_report", type=str, default="outputs/report.json")
     parser.add_argument("--save_errors", type=int, default=20)
+    parser.add_argument("--save_examples", type=int, default=5)
     args = parser.parse_args()
 
     rows = load_jsonl(args.test_file)
@@ -84,9 +110,11 @@ def main() -> None:
     correct = 0
     total = len(rows)
     errors: List[Dict] = []
+    examples: List[Dict] = []
 
     for row in rows:
-        pred = predict_label(model, tokenizer, row["input"], args.max_new_tokens, args.device)
+        prompt = build_prompt(row)
+        pred, completion = predict_label(model, tokenizer, prompt, args.max_new_tokens, args.device)
         gold = row["label"]
         if pred == gold:
             correct += 1
@@ -99,6 +127,15 @@ def main() -> None:
                     "pred": pred,
                 }
             )
+        if len(examples) < args.save_examples:
+            examples.append(
+                {
+                    "id": row["id"],
+                    "gold": gold,
+                    "pred": pred,
+                    "completion": completion.strip(),
+                }
+            )
 
     accuracy = correct / total if total else 0.0
     result = {
@@ -109,6 +146,7 @@ def main() -> None:
         "adapter_path": args.adapter_path,
         "base_model": args.base_model,
         "errors": errors,
+        "examples": examples,
     }
 
     Path(args.save_report).parent.mkdir(parents=True, exist_ok=True)
