@@ -67,7 +67,7 @@ def load_model(base_model: str, adapter_path: str, requested_device: str):
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         trust_remote_code=True,
-        torch_dtype=resolve_inference_dtype(resolved_device),
+        dtype=resolve_inference_dtype(resolved_device),
         device_map="auto" if use_device_map_auto else None,
     )
 

@@ -104,7 +104,7 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         trust_remote_code=True,
-        torch_dtype=resolve_inference_dtype(resolved_device),
+        dtype=resolve_inference_dtype(resolved_device),
         device_map="auto" if use_device_map_auto else None,
     )
     model = PeftModel.from_pretrained(model, args.adapter_path)

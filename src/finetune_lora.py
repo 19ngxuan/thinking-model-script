@@ -78,7 +78,7 @@ def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
         model_name,
         trust_remote_code=True,
         quantization_config=quant_config,
-        torch_dtype=None if qlora else dtype,
+        dtype=None if qlora else dtype,
         device_map={"": 0},
     )
 
