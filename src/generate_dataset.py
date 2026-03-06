@@ -9,14 +9,16 @@ from typing import Dict, List, Tuple
 from solver import diagnose, load_rules
 
 
-def build_prompt(symptoms: List[str]) -> str:
-    joined = ", ".join(symptoms)
+def build_prompt() -> str:
     return (
-        "You are a diagnostic assistant in a synthetic domain. "
-        "Given the patient symptoms, output exactly one label from Disease_01..Disease_15 or UNKNOWN. "
-        "Do not add explanation.\n"
-        f"Symptoms: {joined}\n"
-        "Diagnosis:"
+        "You are a diagnostic assistant in a synthetic domain.\n"
+        "Think step by step and provide four sections:\n"
+        "1) Analysis of problem requirements\n"
+        "2) Solution steps\n"
+        "3) Execution and reasoning\n"
+        "4) Final answer\n"
+        "Always end with exactly: Final answer: <LABEL>\n"
+        "Where <LABEL> is one of Disease_01..Disease_15 or UNKNOWN."
     )
 
 
@@ -73,12 +75,68 @@ def _sample_unknown_case(rng: random.Random, rules: Dict) -> List[str]:
     return sorted(s)
 
 
-def _make_record(case_id: str, symptoms: List[str], label: str) -> Dict:
+def _build_cot_output(symptoms: List[str], label: str, scores: Dict[str, float], rules: Dict) -> str:
+    symptom_set = set(symptoms)
+    analysis = (
+        "Analysis of problem requirements:\n"
+        "I must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. "
+        "A disease is valid only if all required symptoms are present and no excluded symptom appears."
+    )
+
+    steps = (
+        "Solution steps:\n"
+        "1. Check each disease for required symptom coverage.\n"
+        "2. Remove diseases that contain excluded-symptom conflicts.\n"
+        "3. Compare deterministic scores of valid candidates.\n"
+        "4. Apply tie-break (highest score, then lexicographically smallest disease id)."
+    )
+
+    if label == "UNKNOWN":
+        execution = (
+            "Execution and reasoning:\n"
+            "No disease satisfies all required symptoms without exclusion conflicts, "
+            "so no valid candidate remains after filtering."
+        )
+        return "\n\n".join(
+            [
+                analysis,
+                steps,
+                execution,
+                "Final answer:\nFinal answer: UNKNOWN",
+            ]
+        )
+
+    ranked = sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:3]
+    lines = []
+    for disease_id, score in ranked:
+        spec = rules["diseases"][disease_id]
+        required = set(spec["required"])
+        optional = set(spec["optional"])
+        required_matches = len(symptom_set & required)
+        optional_matches = len(symptom_set & optional)
+        lines.append(
+            f"- {disease_id}: score={score:.2f}, required_matches={required_matches}/{len(required)}, optional_matches={optional_matches}"
+        )
+
+    execution = "Execution and reasoning:\nValid candidates and scores:\n" + "\n".join(lines)
+    return "\n\n".join(
+        [
+            analysis,
+            steps,
+            execution,
+            f"Final answer:\nFinal answer: {label}",
+        ]
+    )
+
+
+def _make_record(case_id: str, symptoms: List[str], label: str, scores: Dict[str, float], rules: Dict) -> Dict:
+    joined = ", ".join(symptoms)
     return {
         "id": case_id,
         "symptoms": symptoms,
-        "input": build_prompt(symptoms),
-        "output": label,
+        "instruction": build_prompt(),
+        "input": f"Symptoms: {joined}",
+        "output": _build_cot_output(symptoms, label, scores, rules),
         "label": label,
     }
 
@@ -102,8 +160,8 @@ def generate_dataset(rules: Dict, seed: int, n_samples: int, unknown_ratio: floa
             d = rng.choice(disease_ids)
             symptoms = _sample_disease_case(rng, rules, d)
 
-        label, _ = diagnose(symptoms, rules)
-        records.append(_make_record(case_id=f"case_{idx:06d}", symptoms=symptoms, label=label))
+        label, scores = diagnose(symptoms, rules)
+        records.append(_make_record(case_id=f"case_{idx:06d}", symptoms=symptoms, label=label, scores=scores, rules=rules))
 
     # Deterministic shuffle before split.
     rng.shuffle(records)
