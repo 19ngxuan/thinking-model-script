@@ -1,13 +1,13 @@
-# Synthetic Diagnostic Reasoning - Dataset + DeepSeek-R1 LoRA Fine-Tuning
+# Synthetic Diagnostic Reasoning - Visible CoT + DeepSeek-R1 LoRA Fine-Tuning
 
-Dieses Repository liefert ein komplettes Abgabe-Paket:
-- formale Problemdomäne (`data/domain_rules.json`)
+Dieses Repository liefert ein komplettes Paket fuer sichtbares Chain-of-Thought (CoT) Fine-Tuning:
+- formale Problemdomaene (`data/domain_rules.json`)
 - deterministischer Solver (`src/solver.py`)
-- reproduzierbarer Datensatzgenerator (`src/generate_dataset.py`)
+- reproduzierbarer CoT-Datensatzgenerator (`src/generate_dataset.py`)
+- optionaler Teacher-CoT-Generator via Camel/OpenAI (`src/generate_cot_with_camel.py`)
 - LoRA/QLoRA Fine-Tuning (`src/finetune_lora.py`)
 - Evaluation (`src/evaluate.py`)
 - Inference-CLI (`src/infer.py`)
-- beigefügter Datensatz (`data/train.jsonl`, `data/val.jsonl`, `data/test.jsonl`)
 
 ## 1) Installation
 
@@ -15,7 +15,13 @@ Dieses Repository liefert ein komplettes Abgabe-Paket:
 pip install -r requirements.txt
 ```
 
-## 2) Dataset generieren (mit Seed)
+Optional fuer Teacher-basierte CoT-Generierung:
+
+```bash
+pip install -r requirements-camel.txt
+```
+
+## 2) CoT-Dataset lokal generieren (deterministisch)
 
 ```bash
 python src/generate_dataset.py --seed 42 --n_samples 6000 --unknown_ratio 0.2 --out_dir data
@@ -26,7 +32,30 @@ Erzeugt:
 - `data/val.jsonl`
 - `data/test.jsonl`
 
-## 3) Fine-Tuning starten
+Datensatzschema (pro Zeile):
+- `id`
+- `symptoms`
+- `instruction`
+- `input`
+- `output` (sichtbares CoT + finale Zeile `Final answer: <LABEL>`)
+- `label`
+
+## 3) Optional: CoT mit Teacher-Modell (Camel/OpenAI) erzeugen
+
+Beispiel mit OpenAI-Backend:
+
+```bash
+python src/generate_cot_with_camel.py \
+  --input_file data/train.jsonl \
+  --output_file data/train_teacher_cot.jsonl \
+  --provider openai \
+  --model_name gpt-4o \
+  --max_samples 1000
+```
+
+Der Generator verwirft Samples, wenn `Final answer` nicht dem Gold-Label entspricht.
+
+## 4) Fine-Tuning starten
 
 ```bash
 python src/finetune_lora.py \
@@ -43,10 +72,9 @@ python src/finetune_lora.py \
   --qlora
 ```
 
-Output:
-- `outputs/adapters/ds_r1_diag_lora/`
+Hinweis: `src/finetune_lora.py` unterstuetzt jetzt Alpaca-CoT (`instruction`/`input`/`output`) und bleibt rueckwaertskompatibel zu Legacy-`input`/`output`.
 
-## 4) Evaluation ausführen
+## 5) Evaluation ausfuehren
 
 ```bash
 python src/evaluate.py \
@@ -56,13 +84,13 @@ python src/evaluate.py \
   --save_report outputs/report.json
 ```
 
-Konsolen-Output:
-- Accuracy / Exact Match
+Evaluation bleibt label-zentriert (Accuracy/Exact Match), Label-Extraktion priorisiert:
+- `Final answer: <LABEL>`
+- Regex-Fallback
 
-Datei:
-- `outputs/report.json`
+## 6) Beispiel-Inference
 
-## 5) Beispiel-Inference
+Standardausgabe ist jetzt sichtbares CoT + finale Antwort:
 
 ```bash
 python src/infer.py \
@@ -71,7 +99,17 @@ python src/infer.py \
   --symptoms "fever,cough,fatigue,headache,myalgia"
 ```
 
-## 6) Tests ausführen
+Optionale kompakte Ausgabe:
+
+```bash
+python src/infer.py \
+  --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --adapter_path outputs/adapters/ds_r1_diag_lora \
+  --symptoms "fever,cough,fatigue,headache,myalgia" \
+  --output label
+```
+
+## 7) Tests ausfuehren
 
 ```bash
 python -m unittest discover -s tests -v
@@ -79,18 +117,18 @@ python -m unittest discover -s tests -v
 
 ## Domain-Definition
 
-`data/domain_rules.json` enthält:
+`data/domain_rules.json` enthaelt:
 - 68 Symptome
 - 15 Krankheiten (`Disease_01` bis `Disease_15`)
 - pro Krankheit: `required`, `optional`, `exclude`
-- Tiebreak-Regel: höchster Score, bei Gleichstand lexikografisch kleinste Disease-ID
-- Unknown-Regel: keine Diagnose gültig => `UNKNOWN`
+- Tiebreak-Regel: hoechster Score, bei Gleichstand lexikografisch kleinste Disease-ID
+- Unknown-Regel: keine Diagnose gueltig => `UNKNOWN`
 
 Score:
 - `score = 5 * required_matches + optional_matches - 0.2 * extra_symptoms`
 
 ## Hinweise
 
-- Labels werden im Generator immer über den deterministischen Solver erzeugt.
-- Reproduzierbarkeit wird durch fixed seed sichergestellt.
-- Für Fine-Tuning wird eine GPU mit ausreichendem VRAM empfohlen.
+- Labels werden weiterhin durch den deterministischen Solver festgelegt.
+- Reproduzierbarkeit wird durch Seed sichergestellt.
+- Fuer Fine-Tuning wird eine GPU mit ausreichendem VRAM empfohlen.
