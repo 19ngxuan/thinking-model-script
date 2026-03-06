@@ -20,23 +20,24 @@ def _stub_modules() -> dict[str, object]:
 
 
 class InferTests(unittest.TestCase):
-    def test_build_prompt_formats_symptoms_and_suffix(self) -> None:
+    def test_build_prompt_formats_symptoms_and_response_suffix(self) -> None:
         with patch.dict("sys.modules", _stub_modules()):
             from src.infer import build_prompt
 
             prompt = build_prompt(["fever", "cough", "fatigue"])
 
         self.assertIn("Symptoms: fever, cough, fatigue", prompt)
-        self.assertTrue(prompt.endswith("Diagnosis:"))
+        self.assertIn("1) Analysis of problem requirements", prompt)
+        self.assertTrue(prompt.endswith("Response:\n"))
 
-    def test_extract_label_returns_first_valid_label(self) -> None:
+    def test_extract_label_prefers_final_answer_marker(self) -> None:
         with patch.dict("sys.modules", _stub_modules()):
             from src.infer import extract_label
 
-            text = "Reasoning... Disease_07 and maybe Disease_02"
+            text = "Reasoning... Disease_07 and maybe Disease_02\nFinal answer: Disease_02"
             label = extract_label(text)
 
-        self.assertEqual(label, "Disease_07")
+        self.assertEqual(label, "Disease_02")
 
     def test_extract_label_returns_unknown_when_missing(self) -> None:
         with patch.dict("sys.modules", _stub_modules()):

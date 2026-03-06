@@ -101,11 +101,23 @@ class EvaluateTests(unittest.TestCase):
 
     def test_extract_label_finds_valid_label(self) -> None:
         evaluate = _load_evaluate_module()
-        self.assertEqual(evaluate.extract_label("foo Disease_03 bar"), "Disease_03")
+        self.assertEqual(evaluate.extract_label("Final answer: Disease_03"), "Disease_03")
 
     def test_extract_label_defaults_to_unknown(self) -> None:
         evaluate = _load_evaluate_module()
         self.assertEqual(evaluate.extract_label("nothing to parse"), "UNKNOWN")
+
+    def test_build_prompt_supports_alpaca_fields(self) -> None:
+        evaluate = _load_evaluate_module()
+        row = {
+            "instruction": "Do X",
+            "input": "Symptoms: fever",
+        }
+
+        prompt = evaluate.build_prompt(row)
+        self.assertIn("Instruction:\nDo X", prompt)
+        self.assertIn("Input:\nSymptoms: fever", prompt)
+        self.assertTrue(prompt.endswith("Response:\n"))
 
     def test_predict_label_auto_device_uses_generated_completion(self) -> None:
         evaluate = _load_evaluate_module()
@@ -113,9 +125,10 @@ class EvaluateTests(unittest.TestCase):
         tokenizer = _FakeTokenizer(decoded_text=prompt + "Disease_09")
         model = _FakeModel()
 
-        pred = evaluate.predict_label(model, tokenizer, prompt=prompt, max_new_tokens=8, device="auto")
+        pred, completion = evaluate.predict_label(model, tokenizer, prompt=prompt, max_new_tokens=8, device="auto")
 
         self.assertEqual(pred, "Disease_09")
+        self.assertEqual(completion, "Disease_09")
         self.assertIsNone(model.to_device)
         self.assertEqual(model.generate_kwargs["temperature"], 0.0)
         self.assertEqual(model.generate_kwargs["pad_token_id"], tokenizer.eos_token_id)
@@ -126,9 +139,10 @@ class EvaluateTests(unittest.TestCase):
         tokenizer = _FakeTokenizer(decoded_text=prompt + "UNKNOWN")
         model = _FakeModel()
 
-        pred = evaluate.predict_label(model, tokenizer, prompt=prompt, max_new_tokens=8, device="cpu")
+        pred, completion = evaluate.predict_label(model, tokenizer, prompt=prompt, max_new_tokens=8, device="cpu")
 
         self.assertEqual(pred, "UNKNOWN")
+        self.assertEqual(completion, "UNKNOWN")
         self.assertEqual(model.to_device, "cpu")
         self.assertEqual(model.generate_kwargs["input_ids"].last_device, "cpu")
 
