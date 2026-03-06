@@ -24,7 +24,7 @@ pip install -r requirements-camel.txt
 ## 2) CoT-Dataset lokal generieren (deterministisch)
 
 ```bash
-python src/generate_dataset.py --seed 42 --n_samples 6000 --unknown_ratio 0.2 --out_dir data
+python src/generate_dataset.py --seed 42 --n_samples 12000 --unknown_ratio 0.2 --out_dir data
 ```
 
 Erzeugt:
@@ -58,7 +58,7 @@ Der Generator verwirft Samples, wenn `Final answer` nicht dem Gold-Label entspri
 ## 4) Fine-Tuning starten
 
 ```bash
-python src/finetune_lora.py \
+CUDA_VISIBLE_DEVICES=0 python src/finetune_lora.py \
   --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --train_file data/train.jsonl \
   --val_file data/val.jsonl \
