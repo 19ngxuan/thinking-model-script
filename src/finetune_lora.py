@@ -20,6 +20,15 @@ from transformers import (
 
 
 def format_example(example: Dict) -> str:
+    if "instruction" in example:
+        instruction = str(example["instruction"]).strip()
+        extra_input = str(example.get("input", "")).strip()
+        output = str(example["output"]).strip()
+        if extra_input:
+            return f"Instruction:\n{instruction}\n\nInput:\n{extra_input}\n\nResponse:\n{output}"
+        return f"Instruction:\n{instruction}\n\nResponse:\n{output}"
+
+    # Backward-compatible fallback for legacy label-only datasets.
     return f"{example['input']} {example['output']}"
 
 
