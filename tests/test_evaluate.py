@@ -22,9 +22,11 @@ def _stub_modules() -> dict[str, object]:
     transformers_mod = types.ModuleType("transformers")
 
     torch_mod.no_grad = lambda: _NoGrad()
+    torch_mod.float16 = "float16"
     torch_mod.bfloat16 = "bfloat16"
     torch_mod.float32 = "float32"
     torch_mod.cuda = types.SimpleNamespace(is_available=lambda: False)
+    torch_mod.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
 
     peft_mod.PeftModel = object
     transformers_mod.AutoModelForCausalLM = object
@@ -125,25 +127,38 @@ class EvaluateTests(unittest.TestCase):
         tokenizer = _FakeTokenizer(decoded_text=prompt + "Disease_09")
         model = _FakeModel()
 
-        pred, completion = evaluate.predict_label(model, tokenizer, prompt=prompt, max_new_tokens=8, device="auto")
+        pred, completion = evaluate.predict_label(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_new_tokens=8,
+            generation_device="cuda:0",
+        )
 
         self.assertEqual(pred, "Disease_09")
         self.assertEqual(completion, "Disease_09")
         self.assertIsNone(model.to_device)
+        self.assertEqual(model.generate_kwargs["input_ids"].last_device, "cuda:0")
         self.assertEqual(model.generate_kwargs["temperature"], 0.0)
         self.assertEqual(model.generate_kwargs["pad_token_id"], tokenizer.eos_token_id)
 
-    def test_predict_label_moves_inputs_and_model_for_fixed_device(self) -> None:
+    def test_predict_label_moves_inputs_for_fixed_device(self) -> None:
         evaluate = _load_evaluate_module()
         prompt = "Symptoms: fever\nDiagnosis:"
         tokenizer = _FakeTokenizer(decoded_text=prompt + "UNKNOWN")
         model = _FakeModel()
 
-        pred, completion = evaluate.predict_label(model, tokenizer, prompt=prompt, max_new_tokens=8, device="cpu")
+        pred, completion = evaluate.predict_label(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_new_tokens=8,
+            generation_device="cpu",
+        )
 
         self.assertEqual(pred, "UNKNOWN")
         self.assertEqual(completion, "UNKNOWN")
-        self.assertEqual(model.to_device, "cpu")
+        self.assertIsNone(model.to_device)
         self.assertEqual(model.generate_kwargs["input_ids"].last_device, "cpu")
 
 

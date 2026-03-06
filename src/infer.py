@@ -9,6 +9,11 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+try:
+    from runtime import resolve_generation_device, resolve_inference_dtype, resolve_runtime_device, should_use_device_map_auto
+except ImportError:  # pragma: no cover
+    from src.runtime import resolve_generation_device, resolve_inference_dtype, resolve_runtime_device, should_use_device_map_auto
+
 FINAL_ANSWER_PATTERN = re.compile(r"Final answer:\s*(Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 LABEL_PATTERN = re.compile(r"\b(?:Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 
@@ -79,11 +84,14 @@ def main() -> None:
     parser.add_argument("--base_model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
     parser.add_argument("--adapter_path", type=str, required=True)
     parser.add_argument("--symptoms", type=str, required=True, help="Comma-separated symptoms")
-    parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda")
+    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "mps", "cuda"])
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--rules", type=str, default="data/domain_rules.json")
     parser.add_argument("--output", type=str, choices=["cot", "label", "name", "both"], default="cot")
     args = parser.parse_args()
+
+    resolved_device = resolve_runtime_device(args.device)
+    use_device_map_auto = should_use_device_map_auto(args.device, resolved_device)
 
     symptoms = [x.strip() for x in args.symptoms.split(",") if x.strip()]
     prompt = build_prompt(symptoms)
@@ -96,16 +104,17 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if args.device == "auto" else None,
+        torch_dtype=resolve_inference_dtype(resolved_device),
+        device_map="auto" if use_device_map_auto else None,
     )
     model = PeftModel.from_pretrained(model, args.adapter_path)
+    if not use_device_map_auto:
+        model = model.to(resolved_device)
     model.eval()
+    generation_device = resolve_generation_device(model, resolved_device, use_device_map_auto)
 
     encoded = tokenizer(prompt, return_tensors="pt")
-    if args.device != "auto":
-        encoded = {k: v.to(args.device) for k, v in encoded.items()}
-        model = model.to(args.device)
+    encoded = {k: v.to(generation_device) for k, v in encoded.items()}
 
     with torch.no_grad():
         out = model.generate(

@@ -10,6 +10,11 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+try:
+    from runtime import resolve_generation_device, resolve_inference_dtype, resolve_runtime_device, should_use_device_map_auto
+except ImportError:  # pragma: no cover
+    from src.runtime import resolve_generation_device, resolve_inference_dtype, resolve_runtime_device, should_use_device_map_auto
+
 FINAL_ANSWER_PATTERN = re.compile(r"Final answer:\s*(Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 LABEL_PATTERN = re.compile(r"\b(?:Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 
@@ -51,7 +56,10 @@ def build_prompt(row: Dict) -> str:
     return row["input"]
 
 
-def load_model(base_model: str, adapter_path: str, device: str):
+def load_model(base_model: str, adapter_path: str, requested_device: str):
+    resolved_device = resolve_runtime_device(requested_device)
+    use_device_map_auto = should_use_device_map_auto(requested_device, resolved_device)
+
     tokenizer = AutoTokenizer.from_pretrained(adapter_path if Path(adapter_path).exists() else base_model, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -59,20 +67,21 @@ def load_model(base_model: str, adapter_path: str, device: str):
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if device == "auto" else None,
+        torch_dtype=resolve_inference_dtype(resolved_device),
+        device_map="auto" if use_device_map_auto else None,
     )
 
     model = PeftModel.from_pretrained(model, adapter_path)
+    if not use_device_map_auto:
+        model = model.to(resolved_device)
     model.eval()
-    return model, tokenizer
+    generation_device = resolve_generation_device(model, resolved_device, use_device_map_auto)
+    return model, tokenizer, generation_device
 
 
-def predict_label(model, tokenizer, prompt: str, max_new_tokens: int, device: str) -> tuple[str, str]:
+def predict_label(model, tokenizer, prompt: str, max_new_tokens: int, generation_device: str) -> tuple[str, str]:
     encoded = tokenizer(prompt, return_tensors="pt")
-    if device != "auto":
-        encoded = {k: v.to(device) for k, v in encoded.items()}
-        model = model.to(device)
+    encoded = {k: v.to(generation_device) for k, v in encoded.items()}
 
     with torch.no_grad():
         out = model.generate(
@@ -93,7 +102,7 @@ def main() -> None:
     parser.add_argument("--base_model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
     parser.add_argument("--adapter_path", type=str, required=True)
     parser.add_argument("--test_file", type=str, default="data/test.jsonl")
-    parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda")
+    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "mps", "cuda"])
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--max_examples", type=int, default=0, help="0 means all")
     parser.add_argument("--save_report", type=str, default="outputs/report.json")
@@ -105,7 +114,7 @@ def main() -> None:
     if args.max_examples > 0:
         rows = rows[: args.max_examples]
 
-    model, tokenizer = load_model(args.base_model, args.adapter_path, args.device)
+    model, tokenizer, generation_device = load_model(args.base_model, args.adapter_path, args.device)
 
     correct = 0
     total = len(rows)
@@ -114,7 +123,7 @@ def main() -> None:
 
     for row in rows:
         prompt = build_prompt(row)
-        pred, completion = predict_label(model, tokenizer, prompt, args.max_new_tokens, args.device)
+        pred, completion = predict_label(model, tokenizer, prompt, args.max_new_tokens, generation_device)
         gold = row["label"]
         if pred == gold:
             correct += 1
