@@ -9,6 +9,7 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+FINAL_ANSWER_PATTERN = re.compile(r"Final answer:\s*(Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 LABEL_PATTERN = re.compile(r"\b(?:Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.IGNORECASE)
 
 
@@ -33,15 +34,29 @@ def load_label_name_maps(rules_path: str | Path = "data/domain_rules.json") -> t
 def build_prompt(symptoms: list[str]) -> str:
     joined = ", ".join(symptoms)
     return (
-        "You are a diagnostic assistant in a synthetic domain. "
-        "Given the patient symptoms, output exactly one label from Disease_01..Disease_15 or UNKNOWN. "
-        "Do not add explanation.\n"
-        f"Symptoms: {joined}\n"
-        "Diagnosis:"
+        "Instruction:\n"
+        "You are a diagnostic assistant in a synthetic domain.\n"
+        "Think step by step and provide four sections:\n"
+        "1) Analysis of problem requirements\n"
+        "2) Solution steps\n"
+        "3) Execution and reasoning\n"
+        "4) Final answer\n"
+        "Always end with exactly: Final answer: <LABEL>\n"
+        "Where <LABEL> is one of Disease_01..Disease_15 or UNKNOWN.\n\n"
+        f"Input:\nSymptoms: {joined}\n\n"
+        "Response:\n"
     )
 
 
 def extract_label(text: str, name_to_label: dict[str, str] | None = None) -> str:
+    m = FINAL_ANSWER_PATTERN.search(text)
+    if m:
+        raw = m.group(1).upper()
+        if raw == "UNKNOWN":
+            return "UNKNOWN"
+        disease_num = int(m.group(2))
+        return f"Disease_{disease_num:02d}"
+
     m = LABEL_PATTERN.search(text)
     if m:
         raw = m.group(0).upper()
@@ -65,9 +80,9 @@ def main() -> None:
     parser.add_argument("--adapter_path", type=str, required=True)
     parser.add_argument("--symptoms", type=str, required=True, help="Comma-separated symptoms")
     parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda")
-    parser.add_argument("--max_new_tokens", type=int, default=8)
+    parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--rules", type=str, default="data/domain_rules.json")
-    parser.add_argument("--output", type=str, choices=["label", "name", "both"], default="label")
+    parser.add_argument("--output", type=str, choices=["cot", "label", "name", "both"], default="cot")
     args = parser.parse_args()
 
     symptoms = [x.strip() for x in args.symptoms.split(",") if x.strip()]
@@ -104,7 +119,9 @@ def main() -> None:
     text = tokenizer.decode(out[0], skip_special_tokens=True)
     completion = text[len(prompt) :]
     label = extract_label(completion, name_to_label=name_to_label)
-    if args.output == "label":
+    if args.output == "cot":
+        print(completion.strip())
+    elif args.output == "label":
         print(label)
     elif args.output == "name":
         print(label_to_name.get(label, "UNKNOWN" if label == "UNKNOWN" else label))
