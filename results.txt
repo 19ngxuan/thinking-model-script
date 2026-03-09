@@ -1,0 +1,557 @@
+All information are also in the README.md file.
+
+# Synthetic Diagnostic Reasoning -- Visible CoT + DeepSeek-R1 LoRA Fine-Tuning
+
+This repository provides a complete pipeline for visible
+Chain-of-Thought (CoT) fine-tuning, including:
+
+-   formal problem domain (`data/domain_rules.json`)
+-   deterministic solver (`src/solver.py`)
+-   reproducible CoT dataset generator (`src/generate_dataset.py`)
+-   optional teacher CoT generation via Camel/OpenAI
+    (`src/generate_cot_with_camel.py`)
+-   LoRA / QLoRA fine-tuning (`src/finetune_lora.py`)
+-   evaluation (`src/evaluate.py`)
+-   inference CLI (`src/infer.py`)
+
+------------------------------------------------------------------------
+
+# 1. Installation
+
+``` bash
+pip install -r requirements.txt
+```
+
+Optional dependency for teacher-based CoT generation (Unstable!):
+
+``` bash
+pip install -r requirements-camel.txt
+```
+
+------------------------------------------------------------------------
+
+# 2. Generate CoT Dataset Locally (Deterministic) (I would recommend this! This is more stable!)
+
+``` bash
+python src/generate_dataset.py --seed 42 --n_samples 12000 --unknown_ratio 0.2 --out_dir data
+```
+
+This creates:
+
+-   `data/train.jsonl`
+-   `data/val.jsonl`
+-   `data/test.jsonl`
+
+Dataset schema (per line):
+
+-   `id`
+-   `symptoms`
+-   `instruction`
+-   `input`
+-   `output` (visible CoT + final line `Final answer: <LABEL>`)
+-   `label`
+
+------------------------------------------------------------------------
+
+# 3. Optional: Generate CoT with a Teacher Model (Camel/OpenAI) (Unstable!)
+
+Example using the OpenAI backend:
+
+``` bash
+python src/generate_cot_with_camel.py \
+  --input_file data/train.jsonl \
+  --output_file data/train_teacher_cot.jsonl \
+  --provider openai \
+  --model_name gpt-4o \
+  --max_samples 1000
+```
+
+The generator discards samples when the produced **Final answer** does
+not match the gold label.
+
+------------------------------------------------------------------------
+
+# 4. Start Fine-Tuning
+
+For GPU:
+``` bash
+python src/finetune_lora.py \
+  --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --train_file data/train.jsonl \
+  --val_file data/val.jsonl \
+  --output_dir outputs/adapters \
+  --run_id ds_r1_diag_lora \
+  --epochs 3 \
+  --batch_size 2 \
+  --grad_accum 8 \
+  --max_length 256 \
+  --lr 2e-4 \
+  --qlora
+```
+
+For CPU:
+``` bash
+python src/finetune_lora.py \
+  --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --train_file data/train.jsonl \
+  --val_file data/val.jsonl \
+  --output_dir outputs/adapters \
+  --run_id ds_r1_diag_lora \
+  --epochs 3 \
+  --batch_size 2 \
+  --grad_accum 8 \
+  --max_length 256 \
+  --lr 2e-4 
+```
+
+
+Important: `--qlora` requires `--device cuda` (4-bit bitsandbytes path).
+
+Note: `src/finetune_lora.py` supports Alpaca-style CoT datasets
+(`instruction` / `input` / `output`) while remaining backward compatible
+with legacy `input` / `output` formats.
+
+------------------------------------------------------------------------
+
+# 5. Run Evaluation
+
+``` bash
+python src/evaluate.py \
+  --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --adapter_path outputs/adapters/ds_r1_diag_lora \
+  --test_file data/test.jsonl \
+  --save_report outputs/report.json
+```
+
+Evaluation is label-centric (Accuracy / Exact Match).\
+Label extraction prioritizes:
+
+1.  `Final answer: <LABEL>`
+2.  Regex fallback
+
+------------------------------------------------------------------------
+
+# 6. Example Inference
+
+Default output prints visible reasoning + final answer:
+
+``` bash
+python src/infer.py \
+  --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --adapter_path outputs/adapters/ds_r1_diag_lora \
+  --symptoms "fever,cough,fatigue,headache,myalgia"
+```
+
+Optional compact output:
+
+``` bash
+python src/infer.py \
+  --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --adapter_path outputs/adapters/ds_r1_diag_lora \
+  --symptoms "fever,cough,fatigue,headache,myalgia" \
+  --output label
+```
+
+------------------------------------------------------------------------
+
+
+# Domain Definition
+
+`data/domain_rules.json` contains:
+
+-   68 symptoms
+-   15 diseases (`Disease_01` to `Disease_15`)
+
+Each disease defines:
+
+-   `required`
+-   `optional`
+-   `exclude`
+
+Tie-break rule:
+
+-   choose the candidate with the **highest score**
+-   if tied → choose the **lexicographically smallest disease ID**
+
+Unknown rule:
+
+-   if no diagnosis satisfies all required symptoms and zero excluded
+    symptoms → return `UNKNOWN`
+
+Scoring function:
+
+    score = 5 * required_matches + optional_matches - 0.2 * extra_symptoms
+
+
+------------------------------------------------------------------------
+
+# Notes
+
+-   Labels are determined by the deterministic solver.
+-   Reproducibility is ensured via a random seed.
+-   A GPU with sufficient VRAM is recommended for fine-tuning.
+
+
+Reprot.json:
+
+{
+  "total": 1200,
+  "correct": 962,
+  "accuracy": 0.8016666666666666,
+  "exact_match": 0.8016666666666666,
+  "adapter_path": "outputs/adapters/ds_r1_diag_lora",
+  "base_model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+  "errors": [
+    {
+      "id": "case_004013",
+      "symptoms": [
+        "brittle_nails",
+        "cough",
+        "excessive_thirst",
+        "fatigue",
+        "fever",
+        "flank_pain",
+        "restlessness",
+        "runny_nose"
+      ],
+      "gold": "Disease_01",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_005073",
+      "symptoms": [
+        "chest_tightness",
+        "chills",
+        "cold_intolerance",
+        "constipation",
+        "diarrhea",
+        "dry_skin",
+        "fatigue",
+        "itchy_eyes",
+        "sweating"
+      ],
+      "gold": "Disease_11",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_004907",
+      "symptoms": [
+        "abdominal_pain",
+        "dehydration",
+        "diarrhea",
+        "fever",
+        "nasal_congestion",
+        "nausea",
+        "sneezing",
+        "vomiting",
+        "weight_gain"
+      ],
+      "gold": "Disease_04",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_010527",
+      "symptoms": [
+        "frequent_bowel_movements",
+        "heat_intolerance",
+        "itchy_eyes",
+        "nausea",
+        "palpitations",
+        "weight_loss"
+      ],
+      "gold": "Disease_10",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_004244",
+      "symptoms": [
+        "anxiety",
+        "flank_pain",
+        "heat_intolerance",
+        "hematuria",
+        "nausea",
+        "rapid_breathing",
+        "restlessness",
+        "urinary_burning"
+      ],
+      "gold": "Disease_15",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_000494",
+      "symptoms": [
+        "chest_tightness",
+        "cough",
+        "cramps",
+        "fatigue",
+        "fever",
+        "high_wbc_marker",
+        "rapid_breathing",
+        "shortness_of_breath",
+        "wheezing"
+      ],
+      "gold": "Disease_02",
+      "pred": "Disease_12"
+    },
+    {
+      "id": "case_006815",
+      "symptoms": [
+        "flank_pain",
+        "hematuria",
+        "low_grade_fever",
+        "nausea",
+        "rebound_tenderness",
+        "restlessness",
+        "sneezing",
+        "sweating",
+        "urinary_burning"
+      ],
+      "gold": "Disease_15",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_002368",
+      "symptoms": [
+        "brittle_nails",
+        "chest_tightness",
+        "fatigue",
+        "headache",
+        "pallor",
+        "rapid_breathing",
+        "shortness_of_breath"
+      ],
+      "gold": "Disease_14",
+      "pred": "Disease_10"
+    },
+    {
+      "id": "case_002064",
+      "symptoms": [
+        "fever",
+        "frequent_urination",
+        "myalgia",
+        "tingling_feet",
+        "urinary_burning",
+        "wheezing"
+      ],
+      "gold": "Disease_05",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_010117",
+      "symptoms": [
+        "chest_pain",
+        "dark_urine",
+        "diarrhea",
+        "fatigue",
+        "hair_loss",
+        "nausea",
+        "slow_healing",
+        "vomiting"
+      ],
+      "gold": "Disease_04",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_005251",
+      "symptoms": [
+        "blurred_vision",
+        "fatigue",
+        "itchy_eyes",
+        "joint_pain",
+        "joint_swelling",
+        "morning_stiffness",
+        "wheezing"
+      ],
+      "gold": "Disease_13",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_005348",
+      "symptoms": [
+        "chest_pain",
+        "cough",
+        "fever",
+        "shortness_of_breath",
+        "throat_itch",
+        "tremor",
+        "wheezing"
+      ],
+      "gold": "Disease_02",
+      "pred": "Disease_12"
+    },
+    {
+      "id": "case_010570",
+      "symptoms": [
+        "cough",
+        "fatigue",
+        "jaundice",
+        "loss_of_appetite",
+        "nausea",
+        "neck_pain"
+      ],
+      "gold": "Disease_08",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_008661",
+      "symptoms": [
+        "headache",
+        "light_sensitivity",
+        "nausea",
+        "weight_gain"
+      ],
+      "gold": "Disease_03",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_001571",
+      "symptoms": [
+        "blurred_vision",
+        "chest_pain",
+        "cloudy_urine",
+        "cold_intolerance",
+        "constipation",
+        "fatigue",
+        "hair_loss",
+        "joint_pain",
+        "light_sensitivity"
+      ],
+      "gold": "Disease_11",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_007574",
+      "symptoms": [
+        "dark_urine",
+        "fatigue",
+        "flank_pain",
+        "frequent_bowel_movements",
+        "frequent_urination",
+        "hematuria",
+        "nausea",
+        "pallor",
+        "restlessness",
+        "urinary_urgency",
+        "vomiting"
+      ],
+      "gold": "Disease_15",
+      "pred": "Disease_05"
+    },
+    {
+      "id": "case_010710",
+      "symptoms": [
+        "aura_visual",
+        "cold_intolerance",
+        "constipation",
+        "depression",
+        "dry_skin",
+        "excessive_thirst",
+        "fatigue",
+        "hair_loss",
+        "reduced_grip",
+        "runny_nose",
+        "watery_eyes"
+      ],
+      "gold": "Disease_11",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_003451",
+      "symptoms": [
+        "aura_visual",
+        "constipation",
+        "headache",
+        "light_sensitivity",
+        "loss_of_appetite",
+        "nausea",
+        "neck_pain",
+        "vomiting",
+        "weight_loss"
+      ],
+      "gold": "Disease_03",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_010655",
+      "symptoms": [
+        "anxiety",
+        "elevated_crp",
+        "fever",
+        "frequent_urination",
+        "palpitations",
+        "reduced_grip",
+        "urinary_burning"
+      ],
+      "gold": "Disease_05",
+      "pred": "UNKNOWN"
+    },
+    {
+      "id": "case_009932",
+      "symptoms": [
+        "anxiety",
+        "cold_intolerance",
+        "constipation",
+        "dry_skin",
+        "fatigue",
+        "hair_loss",
+        "rebound_tenderness"
+      ],
+      "gold": "Disease_11",
+      "pred": "UNKNOWN"
+    }
+  ],
+  "examples": [
+    {
+      "id": "case_002772",
+      "gold": "Disease_09",
+      "pred": "Disease_09",
+      "completion": "Analysis of problem requirements:\nI must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. A disease is valid only if all required symptoms are present and no excluded symptom appears.\n\nSolution steps:\n1. Check each disease for required symptom coverage.\n2. Remove diseases that contain excluded-symptom conflicts.\n3. Compare deterministic scores of valid candidates.\n4. Apply tie-break (highest score, then lexicographically smallest disease id).\n\nExecution and reasoning:\nValid candidates and scores:\n- Disease_09: score=16.20, required_matches=3/3, optional_matches=2\n\nFinal answer:\nFinal answer: Disease_09\n</think>\n\nFinal answer: Disease_09"
+    },
+    {
+      "id": "case_004499",
+      "gold": "Disease_13",
+      "pred": "Disease_13",
+      "completion": "Analysis of problem requirements:\nI must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. A disease is valid only if all required symptoms are present and no excluded symptom appears.\n\nSolution steps:\n1. Check each disease for required symptom coverage.\n2. Remove diseases that contain excluded-symptom conflicts.\n3. Compare deterministic scores of valid candidates.\n4. Apply tie-break (highest score, then lexicographically smallest disease id).\n\nExecution and reasoning:\nValid candidates and scores:\n- Disease_13: score=16.80, required_matches=3/3, optional_matches=2\n\nFinal answer:\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer: Disease_13\nFinal answer"
+    },
+    {
+      "id": "case_003457",
+      "gold": "Disease_06",
+      "pred": "Disease_06",
+      "completion": "Analysis of problem requirements:\nI must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. A disease is valid only if all required symptoms are present and no excluded symptom appears.\n\nSolution steps:\n1. Check each disease for required symptom coverage.\n2. Remove diseases that contain excluded-symptom conflicts.\n3. Compare deterministic scores of valid candidates.\n4. Apply tie-break (highest score, then lexicographically smallest disease id).\n\nExecution and reasoning:\nValid candidates and scores:\n- Disease_06: score=17.40, required_matches=3/3, optional_matches=3\n\nFinal answer:\nFinal answer: Disease_06\n</think>\n\nFinal answer: Disease_06"
+    },
+    {
+      "id": "case_008373",
+      "gold": "Disease_06",
+      "pred": "Disease_06",
+      "completion": "Analysis of problem requirements:\nI must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. A disease is valid only if all required symptoms are present and no excluded symptom appears.\n\nSolution steps:\n1. Check each disease for required symptom coverage.\n2. Remove diseases that contain excluded-symptom conflicts.\n3. Compare deterministic scores of valid candidates.\n4. Apply tie-break (highest score, then lexicographically smallest disease id).\n\nExecution and reasoning:\nValid candidates and scores:\n- Disease_06: score=17.60, required_matches=3/3, optional_matches=3\n\nFinal answer:\nFinal answer: Disease_06\n</think>\n\nFinal answer: Disease_06"
+    },
+    {
+      "id": "case_006181",
+      "gold": "Disease_09",
+      "pred": "Disease_09",
+      "completion": "Analysis of problem requirements:\nI must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. A disease is valid only if all required symptoms are present and no excluded symptom appears.\n\nSolution steps:\n1. Check each disease for required symptom coverage.\n2. Remove diseases that contain excluded-symptom conflicts.\n3. Compare deterministic scores of valid candidates.\n4. Apply tie-break (highest score, then lexicographically smallest disease id).\n\nExecution and reasoning:\nValid candidates and scores:\n- Disease_09: score=16.60, required_matches=3/3, optional_matches=2\n\nFinal answer:\nFinal answer: Disease_09\n</think>\n\nFinal answer: Disease_09"
+    }
+  ]
+}
+
+Inference example:
+
+Analysis of problem requirements:                                                                       
+I must map the provided symptoms to one label in Disease_01..Disease_15 or UNKNOWN. A disease is valid 
+only if all required symptoms are present and no excluded symptom appears.                               
+                                                                                                        
+Solution steps:                                                                                         
+1. Check each disease for required symptom coverage.                                                    
+2. Remove diseases that contain excluded-symptom conflicts.                                             
+3. Compare deterministic scores of valid candidates.                                                    
+4. Apply tie-break (highest score, then lexicographically smallest disease id).                         
+                                                                                                        
+Execution and reasoning:                                                                                
+Valid candidates and scores:                        
+- Disease_01: score=15.80, required_matches=3/3, optional_matches=1
+
+Final answer:                                       
+Final answer: Disease_01                            
+
+Where <LABEL> is Disease_01.                        
+Disease_01 (Viral_Flu)   

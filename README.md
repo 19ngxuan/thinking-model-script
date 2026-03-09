@@ -12,6 +12,8 @@ Chain-of-Thought (CoT) fine-tuning, including:
 -   evaluation (`src/evaluate.py`)
 -   inference CLI (`src/infer.py`)
 
+The project defines a synthetic medical diagnosis domain where the model must infer a disease from a list of symptoms.
+
 ------------------------------------------------------------------------
 
 # 1. Installation
@@ -71,7 +73,7 @@ not match the gold label.
 
 # 4. Start Fine-Tuning
 
-
+For GPU:
 ``` bash
 python src/finetune_lora.py \
   --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
@@ -87,10 +89,25 @@ python src/finetune_lora.py \
   --qlora
 ```
 
+For CPU:
+``` bash
+python src/finetune_lora.py \
+  --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --train_file data/train.jsonl \
+  --val_file data/val.jsonl \
+  --output_dir outputs/adapters \
+  --run_id ds_r1_diag_lora \
+  --epochs 3 \
+  --batch_size 2 \
+  --grad_accum 8 \
+  --max_length 256 \
+  --lr 2e-4 
+```
+
 
 Important: `--qlora` requires `--device cuda` (4-bit bitsandbytes path).
 
-Note: `src/finetune_lora.py` supports **Alpaca-style CoT datasets**
+Note: `src/finetune_lora.py` supports Alpaca-style CoT datasets
 (`instruction` / `input` / `output`) while remaining backward compatible
 with legacy `input` / `output` formats.
 
@@ -106,7 +123,7 @@ python src/evaluate.py \
   --save_report outputs/report.json
 ```
 
-Evaluation is **label-centric** (Accuracy / Exact Match).\
+Evaluation is label-centric (Accuracy / Exact Match).\
 Label extraction prioritizes:
 
 1.  `Final answer: <LABEL>`
@@ -116,7 +133,7 @@ Label extraction prioritizes:
 
 # 6. Example Inference
 
-Default output prints **visible reasoning + final answer**:
+Default output prints visible reasoning + final answer:
 
 ``` bash
 python src/infer.py \
@@ -164,6 +181,7 @@ Unknown rule:
 Scoring function:
 
     score = 5 * required_matches + optional_matches - 0.2 * extra_symptoms
+
 
 ------------------------------------------------------------------------
 
