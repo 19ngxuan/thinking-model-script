@@ -88,8 +88,8 @@ def predict_label(model, tokenizer, prompt: str, max_new_tokens: int, generation
             **encoded,
             max_new_tokens=max_new_tokens,
             do_sample=False,
-            temperature=0.0,
             pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id
         )
 
     text = tokenizer.decode(out[0], skip_special_tokens=True)
