@@ -71,7 +71,6 @@ not match the gold label.
 
 # 4. Start Fine-Tuning
 
-Default (auto device selection):
 
 ``` bash
 python src/finetune_lora.py \
@@ -85,64 +84,9 @@ python src/finetune_lora.py \
   --grad_accum 8 \
   --max_length 256 \
   --lr 2e-4 \
-  --device auto \
   --qlora
 ```
 
-Choose a specific device via `--device`:
-
--   CPU:
-
-``` bash
-python src/finetune_lora.py \
-  --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
-  --train_file data/train.jsonl \
-  --val_file data/val.jsonl \
-  --output_dir outputs/adapters \
-  --run_id ds_r1_diag_lora \
-  --epochs 3 \
-  --batch_size 2 \
-  --grad_accum 8 \
-  --max_length 256 \
-  --lr 2e-4 \
-  --device cpu \
-```
-
-
--   Apple Silicon (MPS):
-
-``` bash
-python src/finetune_lora.py \
-  --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
-  --train_file data/train.jsonl \
-  --val_file data/val.jsonl \
-  --output_dir outputs/adapters \
-  --run_id ds_r1_diag_lora \
-  --epochs 3 \
-  --batch_size 2 \
-  --grad_accum 8 \
-  --max_length 256 \
-  --lr 2e-4 \
-  --device mps \
-```
-
--   NVIDIA CUDA GPU:
-
-``` bash
-python src/finetune_lora.py \
-  --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
-  --train_file data/train.jsonl \
-  --val_file data/val.jsonl \
-  --output_dir outputs/adapters \
-  --run_id ds_r1_diag_lora \
-  --epochs 3 \
-  --batch_size 2 \
-  --grad_accum 8 \
-  --max_length 256 \
-  --lr 2e-4 \
-  --device cuda \
-  --qlora
-```
 
 Important: `--qlora` requires `--device cuda` (4-bit bitsandbytes path).
 
