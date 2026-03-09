@@ -86,7 +86,34 @@ def resolve_dtype(dtype_name: str):
     return mapping[dtype_name]
 
 
-def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
+def resolve_device(device_name: str) -> str:
+    """
+    Resolves and validates the target device.
+
+    Args:
+        device_name: The requested device name.
+
+    Returns:
+        A normalized device name.
+    """
+    device = device_name.lower()
+    if device == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+
+    if device not in {"cuda", "mps", "cpu"}:
+        raise ValueError(f"Unsupported device: {device_name}")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise ValueError("Device 'cuda' requested but CUDA is not available.")
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise ValueError("Device 'mps' requested but MPS is not available.")
+    return device
+
+
+def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str, device: str):
     """
     Loads a model and tokenizer from a given model name.
 
@@ -94,6 +121,7 @@ def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
         model_name: The name of the model.
         qlora: Whether to use QLoRA.
         dtype_name: The name of the dtype.
+        device: The target device.
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -103,6 +131,8 @@ def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
 
     quant_config = None
     if qlora:
+        if device != "cuda":
+            raise ValueError("QLoRA requires CUDA. Use --device cuda or disable --qlora.")
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -110,16 +140,20 @@ def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
             bnb_4bit_compute_dtype=dtype,
         )
 
+    device_map = {"": 0} if qlora and device == "cuda" else None
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         trust_remote_code=True,
         quantization_config=quant_config,
         dtype=None if qlora else dtype,
-        device_map={"": 0},
+        device_map=device_map,
     )
 
     if qlora:
         model = prepare_model_for_kbit_training(model)
+    else:
+        model = model.to(torch.device(device))
 
     lora_config = LoraConfig(
         r=16,
@@ -161,13 +195,21 @@ def main() -> None:
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--dtype", type=str, default="bfloat16", choices=["float16", "bfloat16", "float32"])
     parser.add_argument("--qlora", action="store_true")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "mps", "cpu"],
+        help="Target device for training/inference placement.",
+    )
     args = parser.parse_args()
+    device = resolve_device(args.device)
 
     run_id = args.run_id or datetime.utcnow().strftime("run_%Y%m%d_%H%M%S")
     run_dir = Path(args.output_dir) / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    model, tokenizer = load_model_and_tokenizer(args.model_name, args.qlora, args.dtype)
+    model, tokenizer = load_model_and_tokenizer(args.model_name, args.qlora, args.dtype, device)
 
     ds = load_dataset(
         "json",
@@ -195,6 +237,8 @@ def main() -> None:
         logging_steps=20,
         save_total_limit=2,
         load_best_model_at_end=False,
+        no_cuda=device == "cpu",
+        use_mps_device=device == "mps",
         fp16=args.dtype == "float16" and not args.qlora,
         bf16=args.dtype == "bfloat16" and not args.qlora,
         report_to="none",
