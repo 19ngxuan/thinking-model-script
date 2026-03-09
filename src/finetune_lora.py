@@ -20,6 +20,15 @@ from transformers import (
 
 
 def format_example(example: Dict) -> str:
+    """
+    Formats an example into a string.
+
+    Args:
+        example: A dictionary containing the example data.
+
+    Returns:
+        A string containing the formatted example.
+    """
     if "instruction" in example:
         instruction = str(example["instruction"]).strip()
         extra_input = str(example.get("input", "")).strip()
@@ -33,6 +42,16 @@ def format_example(example: Dict) -> str:
 
 
 def tokenize_function(tokenizer, max_length: int):
+    """
+    Tokenizes an example into a dictionary.
+
+    Args:
+        tokenizer: A tokenizer object.
+        max_length: The maximum length of the tokenized example.
+
+    Returns:
+        A dictionary containing the tokenized example.
+    """
     def _inner(example: Dict) -> Dict:
         text = format_example(example)
         tokenized = tokenizer(
@@ -48,6 +67,15 @@ def tokenize_function(tokenizer, max_length: int):
 
 
 def resolve_dtype(dtype_name: str):
+    """
+    Resolves a dtype name to a torch dtype.
+
+    Args:
+        dtype_name: The name of the dtype.
+
+    Returns:
+        A torch dtype.
+    """
     mapping = {
         "float16": torch.float16,
         "bfloat16": torch.bfloat16,
@@ -59,6 +87,14 @@ def resolve_dtype(dtype_name: str):
 
 
 def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
+    """
+    Loads a model and tokenizer from a given model name.
+
+    Args:
+        model_name: The name of the model.
+        qlora: Whether to use QLoRA.
+        dtype_name: The name of the dtype.
+    """
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -107,6 +143,11 @@ def load_model_and_tokenizer(model_name: str, qlora: bool, dtype_name: str):
 
 
 def main() -> None:
+    """
+    CLI entry point.
+
+    Fine-tunes a model on a synthetic diagnostic dataset.
+    """
     parser = argparse.ArgumentParser(description="LoRA/QLoRA fine-tuning for synthetic diagnosis")
     parser.add_argument("--model_name", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
     parser.add_argument("--train_file", type=str, default="data/train.jsonl")
