@@ -10,6 +10,12 @@ from solver import diagnose, load_rules
 
 
 def build_prompt() -> str:
+    """
+    Generates the instruction prompt that will be included in every dataset sample. 
+    The prompt tells the model how it should structure its reasoning and output.
+    It also enforces a strict output format: 
+    Final answer: <LABEL>
+    """
     return (
         "You are a diagnostic assistant in a synthetic domain.\n"
         "Think step by step and provide four sections:\n"
@@ -23,6 +29,18 @@ def build_prompt() -> str:
 
 
 def _sample_disease_case(rng: random.Random, rules: Dict, disease_id: str) -> List[str]:
+    """
+    Generates a synthetic symptom list that corresponds to a specific disease from the domain_rules.json file.
+    The generated case should still be solvable by the rule-based diagnostic system.
+
+    Args:
+        rng: A random number generator.
+        rules: A dictionary containing the domain rules.
+        disease_id: The ID of the disease to generate a case for.
+
+    Returns:
+        A list of symptoms that correspond to the disease.
+    """
     spec = rules["diseases"][disease_id]
     symptoms = set(spec["required"])
 
@@ -52,6 +70,16 @@ def _sample_disease_case(rng: random.Random, rules: Dict, disease_id: str) -> Li
 
 
 def _sample_unknown_case(rng: random.Random, rules: Dict) -> List[str]:
+    """
+    Generates a synthetic symptom list that corresponds to an unknown disease.
+
+    Args:
+        rng: A random number generator.
+        rules: A dictionary containing the domain rules.
+
+    Returns:
+        A list of symptoms that correspond to the unknown disease.
+    """
     global_symptoms = rules["symptoms"]
     disease_ids = list(rules["diseases"].keys())
 
@@ -76,6 +104,18 @@ def _sample_unknown_case(rng: random.Random, rules: Dict) -> List[str]:
 
 
 def _build_cot_output(symptoms: List[str], label: str, scores: Dict[str, float], rules: Dict) -> str:
+    """
+    Builds the output for a given case.
+
+    Args:
+        symptoms: A list of symptoms.
+        label: The label of the disease.
+        scores: A dictionary of scores for each disease.
+        rules: A dictionary containing the domain rules.
+
+    Returns:
+        A string containing the output for the given case.
+    """
     symptom_set = set(symptoms)
     analysis = (
         "Analysis of problem requirements:\n"
@@ -130,6 +170,19 @@ def _build_cot_output(symptoms: List[str], label: str, scores: Dict[str, float],
 
 
 def _make_record(case_id: str, symptoms: List[str], label: str, scores: Dict[str, float], rules: Dict) -> Dict:
+    """
+    Makes a record for a given case.
+
+    Args:
+        case_id: The ID of the case.
+        symptoms: A list of symptoms.
+        label: The label of the disease.
+        scores: A dictionary of scores for each disease.
+        rules: A dictionary containing the domain rules.
+
+    Returns:
+        A dictionary containing the case information.
+    """
     joined = ", ".join(symptoms)
     return {
         "id": case_id,
@@ -142,6 +195,13 @@ def _make_record(case_id: str, symptoms: List[str], label: str, scores: Dict[str
 
 
 def _write_jsonl(path: Path, records: List[Dict]) -> None:
+    """
+    Writes the given list of records to a JSONL file.
+
+    Args:
+        path: The path to the JSONL file.
+        records: A list of dictionaries containing the case information.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for row in records:
@@ -149,6 +209,18 @@ def _write_jsonl(path: Path, records: List[Dict]) -> None:
 
 
 def generate_dataset(rules: Dict, seed: int, n_samples: int, unknown_ratio: float) -> Tuple[List[Dict], List[Dict], List[Dict]]:
+    """
+    Generates a synthetic diagnostic dataset.
+
+    Args:
+        rules: A dictionary containing the domain rules.
+        seed: The seed for the random number generator.
+        n_samples: The number of samples to generate.
+        unknown_ratio: The ratio of unknown cases to generate.
+
+    Returns:
+        A tuple containing the train, validation, and test sets.
+    """
     rng = random.Random(seed)
     disease_ids = sorted(rules["diseases"].keys())
 
@@ -175,6 +247,12 @@ def generate_dataset(rules: Dict, seed: int, n_samples: int, unknown_ratio: floa
 
 
 def main() -> None:
+    """
+    CLI entry point.
+
+    Generates a synthetic diagnostic dataset based on domain rules and
+    writes train/validation/test splits to JSONL files.
+    """
     parser = argparse.ArgumentParser(description="Generate synthetic diagnostic dataset")
     parser.add_argument("--rules", type=str, default="data/domain_rules.json")
     parser.add_argument("--seed", type=int, default=42)
