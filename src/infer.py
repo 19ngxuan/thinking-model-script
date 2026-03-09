@@ -19,6 +19,15 @@ LABEL_PATTERN = re.compile(r"\b(?:Disease[_\s-]?(\d{1,2})|UNKNOWN)\b", flags=re.
 
 
 def load_label_name_maps(rules_path: str | Path = "data/domain_rules.json") -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Loads the label to name and name to label maps from the domain rules file.
+
+    Args:
+        rules_path: The path to the domain rules file.
+
+    Returns:
+        A tuple containing the label to name and name to label maps.
+    """
     path = Path(rules_path)
     if not path.exists():
         return {}, {}
@@ -37,6 +46,15 @@ def load_label_name_maps(rules_path: str | Path = "data/domain_rules.json") -> t
 
 
 def build_prompt(symptoms: list[str]) -> str:
+    """
+    Builds the prompt for the model.
+
+    Args:
+        symptoms: The symptoms to build the prompt for.
+
+    Returns:
+        The prompt for the model.
+    """
     joined = ", ".join(symptoms)
     return (
         "Instruction:\n"
@@ -54,6 +72,16 @@ def build_prompt(symptoms: list[str]) -> str:
 
 
 def extract_label(text: str, name_to_label: dict[str, str] | None = None) -> str:
+    """
+    Extracts the label from the text.
+
+    Args:
+        text: The text to extract the label from.
+        name_to_label: The name to label map.
+
+    Returns:
+        The label from the text.
+    """
     m = FINAL_ANSWER_PATTERN.search(text)
     if m:
         raw = m.group(1).upper()
@@ -80,6 +108,11 @@ def extract_label(text: str, name_to_label: dict[str, str] | None = None) -> str
 
 
 def main() -> None:
+    """
+    CLI entry point.
+
+    Runs quick inference with base model + LoRA adapter.
+    """
     parser = argparse.ArgumentParser(description="Run quick inference with base model + LoRA adapter")
     parser.add_argument("--base_model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
     parser.add_argument("--adapter_path", type=str, required=True)
@@ -127,7 +160,13 @@ def main() -> None:
 
     text = tokenizer.decode(out[0], skip_special_tokens=True)
     completion = text[len(prompt) :]
+    stop = completion.find("Input:")
+    if stop != -1:
+        completion = completion[:stop]
     label = extract_label(completion, name_to_label=name_to_label)
+
+    name = label_to_name.get(label, "UNKNOWN")
+    
     if args.output == "cot":
         print(completion.strip())
     elif args.output == "label":
@@ -138,6 +177,7 @@ def main() -> None:
         disease_name = label_to_name.get(label, "UNKNOWN" if label == "UNKNOWN" else label)
         print(f"{label} ({disease_name})")
 
+    print(f"{label} ({name})")
 
 if __name__ == "__main__":
     main()
