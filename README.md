@@ -1,50 +1,61 @@
-# Synthetic Diagnostic Reasoning - Visible CoT + DeepSeek-R1 LoRA Fine-Tuning
+# Synthetic Diagnostic Reasoning -- Visible CoT + DeepSeek-R1 LoRA Fine-Tuning
 
-Dieses Repository liefert ein komplettes Paket fuer sichtbares Chain-of-Thought (CoT) Fine-Tuning:
-- formale Problemdomaene (`data/domain_rules.json`)
-- deterministischer Solver (`src/solver.py`)
-- reproduzierbarer CoT-Datensatzgenerator (`src/generate_dataset.py`)
-- optionaler Teacher-CoT-Generator via Camel/OpenAI (`src/generate_cot_with_camel.py`)
-- LoRA/QLoRA Fine-Tuning (`src/finetune_lora.py`)
-- Evaluation (`src/evaluate.py`)
-- Inference-CLI (`src/infer.py`)
+This repository provides a complete pipeline for visible
+Chain-of-Thought (CoT) fine-tuning, including:
 
-## 1) Installation
+-   formal problem domain (`data/domain_rules.json`)
+-   deterministic solver (`src/solver.py`)
+-   reproducible CoT dataset generator (`src/generate_dataset.py`)
+-   optional teacher CoT generation via Camel/OpenAI
+    (`src/generate_cot_with_camel.py`)
+-   LoRA / QLoRA fine-tuning (`src/finetune_lora.py`)
+-   evaluation (`src/evaluate.py`)
+-   inference CLI (`src/infer.py`)
 
-```bash
+------------------------------------------------------------------------
+
+# 1. Installation
+
+``` bash
 pip install -r requirements.txt
 ```
 
-Optional fuer Teacher-basierte CoT-Generierung:
+Optional dependency for teacher-based CoT generation (Unstable!):
 
-```bash
+``` bash
 pip install -r requirements-camel.txt
 ```
 
-## 2) CoT-Dataset lokal generieren (deterministisch)
+------------------------------------------------------------------------
 
-```bash
+# 2. Generate CoT Dataset Locally (Deterministic) (I would recommend this! This is more stable!)
+
+``` bash
 python src/generate_dataset.py --seed 42 --n_samples 12000 --unknown_ratio 0.2 --out_dir data
 ```
 
-Erzeugt:
-- `data/train.jsonl`
-- `data/val.jsonl`
-- `data/test.jsonl`
+This creates:
 
-Datensatzschema (pro Zeile):
-- `id`
-- `symptoms`
-- `instruction`
-- `input`
-- `output` (sichtbares CoT + finale Zeile `Final answer: <LABEL>`)
-- `label`
+-   `data/train.jsonl`
+-   `data/val.jsonl`
+-   `data/test.jsonl`
 
-## 3) Optional: CoT mit Teacher-Modell (Camel/OpenAI) erzeugen
+Dataset schema (per line):
 
-Beispiel mit OpenAI-Backend:
+-   `id`
+-   `symptoms`
+-   `instruction`
+-   `input`
+-   `output` (visible CoT + final line `Final answer: <LABEL>`)
+-   `label`
 
-```bash
+------------------------------------------------------------------------
+
+# 3. Optional: Generate CoT with a Teacher Model (Camel/OpenAI) (Unstable!)
+
+Example using the OpenAI backend:
+
+``` bash
 python src/generate_cot_with_camel.py \
   --input_file data/train.jsonl \
   --output_file data/train_teacher_cot.jsonl \
@@ -53,11 +64,14 @@ python src/generate_cot_with_camel.py \
   --max_samples 1000
 ```
 
-Der Generator verwirft Samples, wenn `Final answer` nicht dem Gold-Label entspricht.
+The generator discards samples when the produced **Final answer** does
+not match the gold label.
 
-## 4) Fine-Tuning starten
+------------------------------------------------------------------------
 
-```bash
+# 4. Start Fine-Tuning
+
+``` bash
 CUDA_VISIBLE_DEVICES=0 python src/finetune_lora.py \
   --model_name deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --train_file data/train.jsonl \
@@ -72,11 +86,15 @@ CUDA_VISIBLE_DEVICES=0 python src/finetune_lora.py \
   --qlora
 ```
 
-Hinweis: `src/finetune_lora.py` unterstuetzt jetzt Alpaca-CoT (`instruction`/`input`/`output`) und bleibt rueckwaertskompatibel zu Legacy-`input`/`output`.
+Note: `src/finetune_lora.py` supports **Alpaca-style CoT datasets**
+(`instruction` / `input` / `output`) while remaining backward compatible
+with legacy `input` / `output` formats.
 
-## 5) Evaluation ausfuehren
+------------------------------------------------------------------------
 
-```bash
+# 5. Run Evaluation
+
+``` bash
 python src/evaluate.py \
   --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --adapter_path outputs/adapters/ds_r1_diag_lora \
@@ -84,24 +102,28 @@ python src/evaluate.py \
   --save_report outputs/report.json
 ```
 
-Evaluation bleibt label-zentriert (Accuracy/Exact Match), Label-Extraktion priorisiert:
-- `Final answer: <LABEL>`
-- Regex-Fallback
+Evaluation is **label-centric** (Accuracy / Exact Match).\
+Label extraction prioritizes:
 
-## 6) Beispiel-Inference
+1.  `Final answer: <LABEL>`
+2.  Regex fallback
 
-Standardausgabe ist jetzt sichtbares CoT + finale Antwort:
+------------------------------------------------------------------------
 
-```bash
+# 6. Example Inference
+
+Default output prints **visible reasoning + final answer**:
+
+``` bash
 python src/infer.py \
   --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --adapter_path outputs/adapters/ds_r1_diag_lora \
   --symptoms "fever,cough,fatigue,headache,myalgia"
 ```
 
-Optionale kompakte Ausgabe:
+Optional compact output:
 
-```bash
+``` bash
 python src/infer.py \
   --base_model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --adapter_path outputs/adapters/ds_r1_diag_lora \
@@ -109,26 +131,40 @@ python src/infer.py \
   --output label
 ```
 
-## 7) Tests ausfuehren
+------------------------------------------------------------------------
 
-```bash
-python -m unittest discover -s tests -v
-```
 
-## Domain-Definition
+# Domain Definition
 
-`data/domain_rules.json` enthaelt:
-- 68 Symptome
-- 15 Krankheiten (`Disease_01` bis `Disease_15`)
-- pro Krankheit: `required`, `optional`, `exclude`
-- Tiebreak-Regel: hoechster Score, bei Gleichstand lexikografisch kleinste Disease-ID
-- Unknown-Regel: keine Diagnose gueltig => `UNKNOWN`
+`data/domain_rules.json` contains:
 
-Score:
-- `score = 5 * required_matches + optional_matches - 0.2 * extra_symptoms`
+-   68 symptoms
+-   15 diseases (`Disease_01` to `Disease_15`)
 
-## Hinweise
+Each disease defines:
 
-- Labels werden weiterhin durch den deterministischen Solver festgelegt.
-- Reproduzierbarkeit wird durch Seed sichergestellt.
-- Fuer Fine-Tuning wird eine GPU mit ausreichendem VRAM empfohlen.
+-   `required`
+-   `optional`
+-   `exclude`
+
+Tie-break rule:
+
+-   choose the candidate with the **highest score**
+-   if tied → choose the **lexicographically smallest disease ID**
+
+Unknown rule:
+
+-   if no diagnosis satisfies all required symptoms and zero excluded
+    symptoms → return `UNKNOWN`
+
+Scoring function:
+
+    score = 5 * required_matches + optional_matches - 0.2 * extra_symptoms
+
+------------------------------------------------------------------------
+
+# Notes
+
+-   Labels are determined by the deterministic solver.
+-   Reproducibility is ensured via a random seed.
+-   A GPU with sufficient VRAM is recommended for fine-tuning.
